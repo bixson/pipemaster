@@ -1,0 +1,706 @@
+TEK2 EXAM STUDY GUIDE
+KEA Datamatiker — Teknologi 2
+Grade 10–12 Target | All 6 Exam Topics Covered
+📋 Exam Topics:
+1. CI/CD & GitHub Actions
+2. Docker, Dockerfile & Docker Compose
+3. TCP/IP & OSI Networking
+4. DNS & HTTP(S)
+5. Linux Terminal
+6. Cloud & Virtual Machines
+
+TOPIC 1 — CI/CD & GitHub Actions
+
+Core Concepts
+CI
+Continuous Integration — automatically test and validate code on every push
+CD
+Continuous Delivery/Deployment — automatically deploy after CI passes
+Pipeline
+The automated sequence of steps that runs on code changes
+Workflow
+A YAML file in .github/workflows/ that defines the pipeline
+Job
+A group of steps that runs on a single runner (virtual machine)
+Step
+A single task inside a job — either uses: or run:
+Runner
+The machine (e.g. ubuntu-latest) that executes the job
+Action
+A reusable, pre-built step (e.g. actions/checkout@v4)
+
+Workflow Structure
+name: CI Pipeline
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:   # Enables manual trigger
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+      - run: mvn clean verify
+
+uses: vs run:
+uses:
+Runs a pre-built GitHub Action (reusable third-party step)
+run:
+Runs a shell command directly on the runner
+
+Parallel Jobs (build frontend + backend at same time)
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps: [ ... ]
+  backend:
+    runs-on: ubuntu-latest
+    steps: [ ... ]
+  deploy:
+    needs: [frontend, backend]   # waits for both
+    runs-on: ubuntu-latest
+    steps: [ ... ]
+
+Caching Maven Dependencies
+- uses: actions/cache@v4
+  with:
+    path: ~/.m2
+    key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+    restore-keys: |
+      ${{ runner.os }}-maven-
+Cache key: A hash of pom.xml — if pom.xml changes, cache is invalidated. If unchanged, the cached .m2 folder is reused → faster builds.
+
+Hash-Pinning (Security)
+Problem: Tags like @v4 can be moved or deleted. A compromised action could hijack your pipeline.
+Solution: Pin to a specific SHA256 commit hash:
+- uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+⚡ EXAM TIP: Hash-pinning = reproducibility + security. The pipeline only changes when you explicitly update the hash.
+
+Maven Build Lifecycle (CI-relevant steps)
+mvn compile
+Compiles source code
+mvn test
+Runs unit tests
+mvn verify
+Runs integration tests + checks
+mvn package
+Creates .jar file
+mvn clean
+Deletes target/ folder (old build artifacts)
+mvn clean verify
+Most common in CI — clean + test + verify
+
+Building & Pushing Docker Image in GitHub Actions
+- name: Build Docker image
+  run: docker build -t myapp:${{ github.sha }} .
+- name: Push to Docker Hub
+  run: |
+    docker login -u ${{ secrets.DOCKER_USER }} -p ${{ secrets.DOCKER_TOKEN }}
+    docker push myapp:${{ github.sha }}
+
+Key Q&A
+❓ What checks are most commonly done in a CI pipeline?
+✅ Code-quality checks (linting, complexity)     Security scans (known vulnerabilities)     Dependency checks (compatible, licensed, audited)     Build checks: compilation, unit tests, integration tests     Test coverage thresholds     Docker image build verification
+❓ What is the difference between jobs: and steps:?
+✅ A job runs on its own isolated runner (virtual machine).     A step is a single task within a job, sharing the same runner and filesystem.     Jobs run in parallel by default. Use needs: to create dependencies between jobs.     Steps always run sequentially within a job.
+❓ What is the purpose of hash-pinning?
+✅ Ensures reproducibility: the pipeline behaves exactly the same every time.     Ensures security: a third-party action cannot be silently changed to inject malicious code.     Git tags can be moved; a SHA256 hash refers to exactly one commit forever.
+⚡ EXAM TIP: At the exam: Always define jobs → steps → uses/run. Know the difference. Know why parallel jobs save time.
+
+TOPIC 2 — Docker, Dockerfile & Docker Compose
+
+Core Concepts
+Dockerfile
+A text recipe describing how to build an image. Like a recipe.
+Image
+A built, immutable snapshot from a Dockerfile. Like an uncut cake.
+Container
+A running instance of an image. Like a served slice of cake.
+Docker Hub
+Public registry where images are stored and shared
+Docker Compose
+Tool to define and run multiple containers with a single YAML file
+Volume
+A way to mount files/folders into a container at runtime
+Port mapping
+Maps host port to container port — e.g., 8080:8080
+
+Dockerfile Instructions
+FROM
+Base image to build from (e.g., FROM maven:3.9.9-eclipse-temurin-21)
+WORKDIR
+Sets working directory inside container
+COPY
+Copies files from host into image at build time
+RUN
+Executes a shell command during image build
+ENTRYPOINT
+The command that runs when the container starts
+AS build
+Names a build stage (used in multi-stage builds)
+--from=build
+Copies artifacts from a previous stage
+
+Multi-Stage Dockerfile (Java)
+FROM maven:3.9.9-eclipse-temurin-21 AS build
+WORKDIR /app
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+FROM eclipse-temurin:21-jdk-alpine
+WORKDIR /app
+COPY --from=build /app/target/*.jar app.jar
+ENTRYPOINT ["java", "-jar", "app.jar"]
+Why multi-stage? The final image does NOT contain Maven, source code, or build tools — only the runtime JAR. Smaller, faster, more secure.
+
+Docker Commands
+docker build .
+Build image from Dockerfile in current directory
+docker build -t name:tag .
+Build and tag the image
+docker run <image>
+Start a container from an image
+docker run -it <image>
+Start interactive terminal in container
+docker run -d <image>
+Start container in background (detached)
+docker run -p 8080:8080 <img>
+Map host:container ports
+docker ps
+Show running containers
+docker ps -a
+Show all containers (including stopped)
+docker stop <container>
+Stop a running container
+docker rm <container>
+Remove a container
+docker image ls
+List available images
+docker rmi <image>
+Remove an image
+docker system prune
+Remove all unused resources
+
+Docker Compose
+Example compose.yaml — Java App + MySQL
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - "./application-docker.properties:/app/application.properties:ro"
+    environment:
+      SPRING_CONFIG_LOCATION: file:/app/application.properties
+  database:
+    image: mysql:8.0
+    ports:
+      - "127.0.0.1:3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+
+Port Mapping & Security
+3306:3306
+Exposes on ALL interfaces — DANGEROUS on cloud VMs (internet-accessible)
+127.0.0.1:3307:3306
+Only accessible from localhost — SAFE for databases
+⚡ EXAM TIP: Always use 127.0.0.1: prefix for databases. Only expose ports externally when absolutely necessary.
+
+COPY vs volumes — When to Use Which?
+COPY (Dockerfile — build time)
+	•	Files become part of the image
+	•	Good for: static app code, libraries
+	•	Bad for: secrets — they end up in image layers
+	•	Requires image rebuild if files change
+volumes (compose.yaml — run time)
+	•	Files mounted from host at runtime
+	•	Good for: config files, secrets, dev mode
+	•	Changes without rebuilding the image
+	•	Less portable — depends on host file system
+
+Key Q&A
+❓ What is the difference between a Dockerfile, an image, and a container?
+✅ Dockerfile = recipe (instructions to build)     Image = the built, immutable template (like a blueprint)     Container = a running instance of an image     One image can run as many containers simultaneously.
+❓ What is the purpose of multi-stage builds?
+✅ The build stage uses a heavy image (Maven) to compile the application.     The runtime stage copies only the compiled .jar into a lightweight Alpine image.     Result: final image has no build tools → smaller, faster, more secure.
+❓ Why use Docker Compose instead of plain Docker?
+✅ Running multiple containers requires many long commands with many arguments.     Docker Compose lets you define all services, ports, volumes, and environment in one file.     One command (docker compose up) starts everything correctly every time.     It is reproducible and easy to share with teammates.
+
+TOPIC 3 — TCP/IP & OSI Networking
+
+The Network Layers
+Layer 1 — Physical
+Raw bits/bytes over a medium. Frame in WireShark. No addressing.
+Layer 2 — Data Link
+MAC addresses, Ethernet frames. Switches operate here.
+Layer 3 — Network
+IP addresses, routing between networks. Routers operate here.
+Layer 4 — Transport
+TCP/UDP. Ports, reliable delivery, sequencing, flow control.
+Layer 5-7 — Application
+HTTP, DNS, HTTPS, SSH, FTP — protocols used by apps.
+TCP/IP model combines: Layer 1+2 → "Network Access", Layer 5+6+7 → "Application". Otherwise same as OSI.
+
+IP Addresses vs MAC Addresses
+IP Address
+Logical address assigned by DHCP. Changes. Used for routing (Layer 3).
+MAC Address
+Physical hardware address. Fixed in network card. Used within LAN (Layer 2).
+Local IP
+Private address (10.x.x.x, 192.168.x.x, 172.16.x.x) — not routable on internet
+Public IP
+Address visible on the internet, assigned by ISP, shared via NAT
+Why you cannot see kea.dk's MAC address in WireShark: MAC addresses are only visible within the same LAN segment. By the time a packet arrives, it carries your router's MAC, not the destination server's MAC.
+
+Router vs Switch
+Switch
+Operates at Layer 2. Forwards frames within a LAN using MAC addresses.
+Router
+Operates at Layer 3. Routes packets between different networks using IP addresses.
+
+TCP Layer Details (Layer 4)
+Src Port
+Source port — which app/process is sending
+Dst Port
+Destination port — which service to reach on the other end
+Sequence Number
+Tracks bytes sent — ensures correct order
+Acknowledgment Number
+Confirms bytes received — enables retransmission if lost
+SYN
+Flag: initiates connection (3-way handshake: SYN → SYN-ACK → ACK)
+ACK
+Flag: acknowledges received data
+FIN
+Flag: closes connection
+
+Common Standard Ports
+22
+SSH
+80
+HTTP
+443
+HTTPS
+3306
+MySQL
+5432
+PostgreSQL
+8080
+Common dev/app server port
+
+WireShark Filter Examples
+ip.addr == 185.67.45.84    # Filter by IP
+http                        # Show only HTTP traffic
+dns                         # Show only DNS traffic
+dhcp                        # Show DHCP exchange
+tcp.port == 443             # Show only HTTPS
+
+Key Q&A
+❓ What is the difference between a local IP and a public IP?
+✅ A local (private) IP is assigned by DHCP within the LAN (10.x, 192.168.x, 172.16.x).     It is not routable on the internet.     A public IP is assigned by the ISP and is visible on the internet.     NAT (Network Address Translation) maps many private IPs to one public IP.
+❓ Why does TCP have sequence numbers and acknowledgments?
+✅ TCP guarantees reliable delivery. If a packet is lost, the receiver detects the gap.     The receiver sends an acknowledgment for each received segment.     If an ACK is not received in time, TCP automatically retransmits the lost segment.     This ensures data arrives in order and without errors.
+⚡ EXAM TIP: src = source (who is sending). dst = destination (who receives). Src port identifies the application on the sender side. Dst port identifies the service on the receiver side.
+
+TOPIC 4 — DNS & HTTP(S)
+
+DNS — Domain Name System
+DNS
+Translates domain names (kea.dk) to IP addresses (185.67.45.84)
+A record
+Maps domain → IPv4 address
+AAAA record
+Maps domain → IPv6 address
+CNAME record
+Alias — maps one domain to another domain name
+MX record
+Mail exchange — which server handles email for the domain
+NS record
+Name server — which DNS server is authoritative for the domain
+TTL
+Time To Live — how long the record is cached (in seconds)
+
+DNS Lookup Process (Recursive Resolver)
+1. Your computer asks the Recursive Resolver (usually your ISP or 8.8.8.8)
+2. Resolver asks the Root Nameserver → directed to TLD nameserver (.dk)
+3. Resolver asks TLD nameserver → directed to Authoritative Nameserver for kea.dk
+4. Authoritative nameserver returns the A record (IP address)
+5. Resolver caches the result for TTL seconds and returns it to you
+
+Authoritative vs Caching Nameserver
+Authoritative
+The official source for a domain. Set by the domain owner. Returns definitive answers.
+Caching/Recursive
+Queries on behalf of clients. Caches results for TTL duration to reduce load.
+
+TTL — Why High or Low?
+High TTL (e.g. 86400)
+Fewer DNS queries → less load. Use when IP rarely changes.
+Low TTL (e.g. 300)
+Changes propagate faster. Use before planned IP migrations.
+
+DNS Lookup Commands
+nslookup kea.dk              # Basic DNS lookup
+dig kea.dk                   # Detailed DNS lookup
+dig kea.dk MX                # Lookup MX records
+dig +short NS kea.dk         # Short NS record output
+host kea.dk                  # Simple lookup
+
+HTTP(S)
+HTTP
+Stateless application protocol for transferring web content (Layer 5-7)
+HTTPS
+HTTP encrypted with TLS — same protocol, but encrypted channel
+Stateless
+Each request is independent — server has no memory of previous requests
+Cookie
+Small piece of data stored in browser to maintain state (e.g. session ID)
+
+HTTP Methods
+GET
+Retrieve resource. No body. Safe & idempotent.
+POST
+Create resource. Has body. Not idempotent.
+PUT
+Replace/update resource. Has body. Idempotent.
+DELETE
+Delete resource.
+HEAD
+Same as GET but returns only headers (no body) — useful for metadata.
+OPTIONS
+Returns allowed methods for a resource (used in CORS preflight).
+
+HTTP Status Codes
+200 OK
+Request succeeded
+201 Created
+New resource was created
+204 No Content
+Success, no response body
+301 Moved Permanently
+Resource moved — browser should update its URL
+302 Found
+Temporary redirect
+400 Bad Request
+Client sent invalid request
+401 Unauthorized
+Authentication required
+403 Forbidden
+Authenticated but not allowed
+404 Not Found
+Resource does not exist
+500 Internal Server Error
+Server-side error
+503 Service Unavailable
+Server is overloaded or down
+
+HTTP Headers
+Accept
+Client tells server what content types it can handle (e.g. application/json)
+Content-Type
+Sender declares what type of content the body contains
+Authorization
+Contains credentials (Bearer token, Basic auth)
+Cookie
+Browser sends stored cookies to server
+Set-Cookie
+Server sends cookie to be stored in browser
+
+REST Architecture
+GET    /api/booking/:id    → Read one booking
+POST   /api/booking        → Create new booking
+PUT    /api/booking/:id    → Update booking
+DELETE /api/booking/:id    → Delete booking
+
+Key Q&A
+❓ If HTTP is stateless, how do you stay logged in?
+✅ After login, the server creates a session and sends a session ID in a cookie (Set-Cookie header).     The browser stores the cookie and sends it with every subsequent request.     The server looks up the session ID to identify the user.     Alternatively: JWT tokens can be sent in the Authorization header.
+❓ What is the difference between Accept and Content-Type headers?
+✅ Accept: Sent by the client to tell the server what format it can handle.       Example: Accept: application/json     Content-Type: Tells the receiver what format the body of THIS message is in.       Example: Content-Type: application/json
+⚡ EXAM TIP: TTL high = performance. TTL low = flexibility during migrations. Remember: Who determines the IP? The domain owner via their DNS registrar/hosting provider.
+
+TOPIC 5 — Linux Terminal
+
+Terminal, Shell & Commands — The Difference
+Terminal
+The window/application you type in (e.g., cmd.exe, Terminal.app, GNOME Terminal)
+Shell
+The program that interprets and executes commands (e.g., bash, zsh, sh)
+Command
+A specific program or built-in instruction (e.g., ls, cd, grep, cat)
+
+Essential Commands
+ls
+List files in current directory
+ls -la
+List all files (incl. hidden) with permissions and ownership
+cd <dir>
+Change directory
+pwd
+Print current working directory
+mkdir <dir>
+Create a new directory
+rm <file>
+Remove a file
+rm -r <dir>
+Remove a directory recursively
+cp <src> <dst>
+Copy file
+mv <src> <dst>
+Move or rename file
+cat <file>
+Print entire file content
+less <file>
+View file with scroll support (q to quit)
+head <file>
+Show first 10 lines
+tail <file>
+Show last 10 lines
+tail -f <file>
+Follow file in real time (great for logs)
+grep "pattern" file
+Search for pattern in file
+grep -r "pattern" dir/
+Recursive search in directory
+wc -l <file>
+Count lines in file
+nano <file>
+Simple terminal text editor
+vim <file>
+Advanced terminal text editor (i=insert, :wq=save&quit)
+sudo <cmd>
+Run command as root/admin
+chmod <perms> <file>
+Change file permissions
+chown user:group <file>
+Change file owner
+ps
+Show your running processes
+ps ax
+Show ALL running processes
+top / htop
+Interactive process monitor
+kill <PID>
+Kill a process by ID
+ss -tulnp
+Show open network ports
+netstat -tulnp
+Show open network ports (alternative)
+
+Pipes & Redirection
+cmd > file.txt
+Write output to file (overwrites)
+cmd >> file.txt
+Append output to file
+cmd < file.txt
+Read input from file
+cmd1 | cmd2
+Pipe: send output of cmd1 as input to cmd2
+ls | wc -l
+Count number of files
+cat file | grep "error"
+Find lines containing "error"
+ps ax | grep nginx
+Find nginx process
+
+File Permissions
+-rwxr-xr--  1 alice devs  1234  file.sh
+
+-rwxr-xr--
+Type + owner (rwx) + group (r-x) + others (r--)
+r = 4
+Read permission
+w = 2
+Write permission
+x = 1
+Execute permission
+- = 0
+No permission
+chmod 755 file
+Owner: rwx (7), Group: r-x (5), Others: r-x (5)
+chmod 644 file
+Owner: rw- (6), Group: r-- (4), Others: r-- (4)
+chmod +x file
+Add execute permission to all
+chown alice:devs file
+Set owner=alice, group=devs
+chown -R alice /dir
+Recursively change ownership of directory
+
+SSH — Secure Shell
+SSH
+Encrypted protocol for remote terminal access to servers
+ssh user@host
+Connect to a remote server
+ssh -i key.pem user@host
+Connect using a private key file
+scp file user@host:path/
+Copy file TO remote server
+scp user@host:path/file .
+Copy file FROM remote server
+~/.ssh/id_rsa
+Private key (NEVER share)
+~/.ssh/id_rsa.pub
+Public key (safe to share / upload to server)
+~/.ssh/authorized_keys
+File on server listing allowed public keys
+How public key auth works: Your private key signs a challenge. Server verifies with your public key. No password sent over the network.
+
+Key Q&A
+❓ What is the difference between a terminal, a shell, and a command?
+✅ Terminal: The interface/application you type in (the window).     Shell: The program that reads and interprets what you type (e.g. bash).     Command: A specific executable program or shell built-in (e.g. ls, cd).     Analogy: Terminal = typewriter, Shell = typist, Command = words typed.
+❓ How does SSH public key authentication work?
+✅ You have a key pair: private key (secret, stays on your machine) and public key.     The public key is added to ~/.ssh/authorized_keys on the server.     When you connect, the server sends a challenge.     Your SSH client signs the challenge with your private key.     The server verifies the signature using your stored public key.     No password is transmitted → more secure.
+⚡ EXAM TIP: Know: > overwrites, >> appends. To avoid overwriting by accident, use >>. The | pipe chains commands — output of left becomes input of right.
+
+TOPIC 6 — Cloud & Virtual Machines
+
+Cloud Service Models
+IaaS
+Infrastructure as a Service — you manage the OS, software. Cloud provides hardware. Example: DigitalOcean Droplet, Azure VM, AWS EC2
+PaaS
+Platform as a Service — cloud manages infrastructure. You deploy code only. Example: Heroku, Azure App Service, Google App Engine
+SaaS
+Software as a Service — fully managed app. You just use it. Example: Gmail, Office 365
+VM
+Virtual Machine — a simulated computer running inside a cloud server
+
+Other Cloud Products
+Object Storage
+Store and serve files at scale (e.g. AWS S3, Azure Blob Storage)
+Managed Database
+Cloud-managed database service — no server maintenance needed
+CDN
+Content Delivery Network — serve static files fast from edge nodes
+Serverless
+Run code without managing servers (AWS Lambda, Azure Functions)
+Kubernetes
+Container orchestration platform for large-scale deployments
+
+Working with a Cloud VM
+Connecting via SSH
+ssh -i ~/.ssh/mykey.pem ubuntu@<server-ip>
+
+Package Management (Ubuntu/Debian)
+sudo apt update              # Update package list
+sudo apt upgrade             # Install available updates
+sudo apt install nginx       # Install nginx
+sudo apt remove nginx        # Remove nginx
+
+Process Monitoring
+htop                         # Interactive process monitor
+ps ax                        # All running processes
+ps faux | grep nginx         # Find specific process
+kill <PID>                   # Stop a process
+kill -9 <PID>               # Force-kill a process
+
+Network Monitoring
+ss -tulnp                    # Show all listening ports
+ss -tulnp | grep 8080       # Check if port 8080 is in use
+
+User Management
+sudo adduser alice           # Create new user
+sudo usermod -aG sudo alice  # Give sudo privileges
+sudo usermod -aG docker alice# Give Docker access
+su - alice                   # Switch to user alice
+
+Deploying with Docker Compose on VM
+Step 1: Copy compose.yaml to server
+scp compose.yaml ubuntu@<server>:~/
+Step 2: Start containers
+docker compose up            # Start (shows logs)
+docker compose up -d         # Start in background
+docker compose down          # Stop and remove
+
+Deploying a Static Website
+Options: GitHub Pages (free), Netlify, Vercel, S3 static hosting, Azure Static Web Apps
+Steps for cloud VM approach:
+	•	Install nginx on VM
+	•	Copy HTML/CSS/JS files to /var/www/html/
+	•	Configure firewall to allow port 80/443
+	•	Optionally configure domain + TLS certificate (Let's Encrypt)
+
+Firewall Management
+sudo ufw status              # Check firewall status
+sudo ufw allow 22            # Allow SSH
+sudo ufw allow 80            # Allow HTTP
+sudo ufw allow 443           # Allow HTTPS
+sudo ufw enable              # Enable firewall
+
+Docker Port Security on Cloud
+Critical rule: 0.0.0.0:8080:8080 exposes to the internet. Use 127.0.0.1:8080:8080 for internal services.
+⚡ EXAM TIP: If your database is exposed on 0.0.0.0:3306 on a cloud VM, anyone on the internet can try to connect. Always use 127.0.0.1 for databases.
+
+GitHub Actions CD — Deploy to Cloud VM
+deploy:
+  needs: [build]
+  runs-on: ubuntu-latest
+  steps:
+    - name: Deploy via SSH
+      run: |
+        ssh ubuntu@${{ secrets.SERVER_IP }} \
+          "cd ~/app && docker compose pull && docker compose up -d"
+
+Key Q&A
+❓ What is the difference between IaaS and PaaS?
+✅ IaaS (Infrastructure as a Service): You get a VM and manage the OS, runtime, and software.       Example: DigitalOcean Droplet — you SSH in, install Docker, configure firewall.     PaaS (Platform as a Service): The cloud manages infrastructure. You only deploy code.       Example: Heroku — you push code; it handles servers, scaling, and runtime.     IaaS: more control, more responsibility. PaaS: less control, less work.
+❓ How does port configuration in Docker Compose affect security on a cloud VM?
+✅ If you write ports: "3306:3306", the port binds to 0.0.0.0 — all network interfaces.     On a cloud VM, this means the database is accessible from the public internet.     Writing "127.0.0.1:3306:3306" restricts it to localhost only.     You should always restrict database and internal service ports to 127.0.0.1.     Only expose ports that need to be public (e.g., 80 and 443 for web traffic).
+
+
+QUICK REFERENCE CHEATSHEET
+
+The Most Likely Exam Questions (All Topics)
+
+CI/CD
+	•	jobs vs steps → jobs = isolated runner, steps = sequential tasks in same runner
+	•	uses: vs run: → uses: = reusable action, run: = shell command
+	•	needs: → creates dependency between jobs
+	•	hash-pinning → security + reproducibility
+	•	cache key → hash of pom.xml; invalidated when dependencies change
+
+Docker
+	•	Dockerfile → image → container (recipe → blueprint → running instance)
+	•	Multi-stage: builder stage uses Maven, runtime stage uses Alpine
+	•	COPY = build time (in image), volumes = run time (from host)
+	•	127.0.0.1:3306:3306 = safe, 3306:3306 = dangerous on cloud VM
+	•	docker compose up = start everything, docker system prune = clean up
+
+TCP/IP
+	•	Layer 2 = MAC (switch), Layer 3 = IP (router), Layer 4 = TCP/UDP (ports)
+	•	SYN → SYN-ACK → ACK = TCP 3-way handshake
+	•	Local IP: 10.x.x.x, 192.168.x.x — not routable on internet
+	•	src port = sender application, dst port = target service
+
+DNS & HTTP
+	•	A record → IP, MX → mail, CNAME → alias, NS → nameserver, TTL → cache duration
+	•	Authoritative = source of truth, Recursive = resolves on behalf of client
+	•	GET = read, POST = create, PUT = update, DELETE = delete
+	•	401 = not authenticated, 403 = not authorized, 404 = not found, 500 = server error
+	•	Session via cookie: server creates session → sends session ID in Set-Cookie header
+	•	Accept = what client can handle, Content-Type = what this message contains
+
+Linux
+	•	Terminal = window, Shell = interpreter (bash), Command = program
+	•	chmod 755 = owner: rwx, group: r-x, others: r-x
+	•	> overwrites, >> appends, | pipes, < reads from file
+	•	SSH: private key signs challenge, server verifies with public key
+	•	scp = secure copy, authorized_keys = allowed public keys on server
+
+Cloud
+	•	IaaS = you manage OS (VM), PaaS = you deploy code only
+	•	apt update = refresh package list, apt upgrade = install updates
+	•	Always use 127.0.0.1: for internal ports on cloud VMs
+	•	CD workflow: build → push image → SSH to server → docker compose up -d
+
+
+Good luck, Alexander. You have got this! 🎯

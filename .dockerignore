@@ -1,0 +1,12 @@
+.git
+.github
+.idea
+.DS_Store
+k8s
+*.md
+*.pdf
+*.docx
+*.txt
+dockermaster.sh
+dojomaster.sh
+netmaster.sh

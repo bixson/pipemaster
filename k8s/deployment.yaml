@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pipemaster
+  labels:
+    app: pipemaster
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pipemaster
+  template:
+    metadata:
+      labels:
+        app: pipemaster
+    spec:
+      containers:
+        - name: pipemaster
+          image: ghcr.io/bixson/pipemaster:latest
+          ports:
+            - containerPort: 7681
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
